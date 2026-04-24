@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback, useMemo, memo } from "react"
 import useSWR from "swr"
 import dynamic from "next/dynamic"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { MapPin } from "lucide-react"
 import type { Alert } from "@/lib/types"
 import { Spinner } from "@/components/ui/spinner"
+import { useRealtime } from "@/hooks/use-realtime"
+import { ConnectionIndicator } from "./connection-indicator"
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json())
 
@@ -36,12 +38,72 @@ const Circle = dynamic(
 interface LiveMapProps {
   className?: string
   height?: string
+  showConnectionStatus?: boolean
 }
 
-export function LiveMap({ className, height = "500px" }: LiveMapProps) {
+// Memoized marker component for performance
+const AlertMarker = memo(function AlertMarker({ alert }: { alert: Alert }) {
+  const color =
+    alert.status === "active"
+      ? "#ef4444"
+      : alert.status === "responding"
+        ? "#f59e0b"
+        : "#22c55e"
+
+  return (
+    <>
+      <Circle
+        center={[alert.latitude, alert.longitude]}
+        radius={200}
+        pathOptions={{
+          color,
+          fillColor: color,
+          fillOpacity: 0.2,
+        }}
+      />
+      <Marker position={[alert.latitude, alert.longitude]}>
+        <Popup>
+          <div className="min-w-48">
+            <p className="font-semibold">{alert.user?.full_name || "Unknown"}</p>
+            <p className="text-sm capitalize">{alert.alert_type} Alert</p>
+            <p className="text-sm text-muted-foreground">
+              Status: <span className="capitalize">{alert.status}</span>
+            </p>
+            {alert.address && (
+              <p className="mt-1 text-xs text-muted-foreground">{alert.address}</p>
+            )}
+          </div>
+        </Popup>
+      </Marker>
+    </>
+  )
+})
+
+export function LiveMap({
+  className,
+  height = "500px",
+  showConnectionStatus = true,
+}: LiveMapProps) {
   const [mounted, setMounted] = useState(false)
-  const { data: alerts, isLoading } = useSWR<Alert[]>("/api/alerts", fetcher, {
-    refreshInterval: 5000,
+
+  const { data: alerts, isLoading, mutate } = useSWR<Alert[]>("/api/alerts", fetcher, {
+    refreshInterval: 0, // Rely on realtime
+    revalidateOnFocus: true,
+    dedupingInterval: 2000,
+  })
+
+  // Real-time subscription for alerts
+  const { status, lastUpdate, reconnect } = useRealtime<Alert>({
+    table: "alerts",
+    onInsert: useCallback(() => mutate(), [mutate]),
+    onUpdate: useCallback(() => mutate(), [mutate]),
+    onDelete: useCallback(() => mutate(), [mutate]),
+  })
+
+  // Also subscribe to locations for live tracking
+  useRealtime({
+    table: "locations",
+    onInsert: useCallback(() => mutate(), [mutate]),
   })
 
   useEffect(() => {
@@ -51,10 +113,19 @@ export function LiveMap({ className, height = "500px" }: LiveMapProps) {
   // Default center (New York)
   const defaultCenter: [number, number] = [40.7128, -74.006]
 
-  // Calculate center based on alerts
-  const center: [number, number] = alerts && alerts.length > 0
-    ? [alerts[0].latitude, alerts[0].longitude]
-    : defaultCenter
+  // Memoize center calculation
+  const center = useMemo<[number, number]>(() => {
+    if (alerts && alerts.length > 0) {
+      return [alerts[0].latitude, alerts[0].longitude]
+    }
+    return defaultCenter
+  }, [alerts])
+
+  // Memoize active alerts count
+  const activeAlertsCount = useMemo(
+    () => alerts?.filter((a) => a.status === "active").length || 0,
+    [alerts]
+  )
 
   if (!mounted) {
     return (
@@ -75,15 +146,22 @@ export function LiveMap({ className, height = "500px" }: LiveMapProps) {
   return (
     <Card className={className}>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-primary" />
-          Live Map
-          {alerts && alerts.filter((a) => a.status === "active").length > 0 && (
-            <Badge variant="destructive">
-              {alerts.filter((a) => a.status === "active").length} Active
-            </Badge>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <MapPin className="h-5 w-5 text-primary" />
+            Live Map
+            {activeAlertsCount > 0 && (
+              <Badge variant="destructive">{activeAlertsCount} Active</Badge>
+            )}
+          </CardTitle>
+          {showConnectionStatus && (
+            <ConnectionIndicator
+              status={status}
+              lastUpdate={lastUpdate}
+              onReconnect={reconnect}
+            />
           )}
-        </CardTitle>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         {isLoading ? (
@@ -109,31 +187,7 @@ export function LiveMap({ className, height = "500px" }: LiveMapProps) {
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
               {alerts?.map((alert) => (
-                <div key={alert.id}>
-                  <Circle
-                    center={[alert.latitude, alert.longitude]}
-                    radius={200}
-                    pathOptions={{
-                      color: alert.status === "active" ? "#ef4444" : alert.status === "responding" ? "#f59e0b" : "#22c55e",
-                      fillColor: alert.status === "active" ? "#ef4444" : alert.status === "responding" ? "#f59e0b" : "#22c55e",
-                      fillOpacity: 0.2,
-                    }}
-                  />
-                  <Marker position={[alert.latitude, alert.longitude]}>
-                    <Popup>
-                      <div className="min-w-48">
-                        <p className="font-semibold">{alert.user?.full_name || "Unknown"}</p>
-                        <p className="text-sm capitalize">{alert.alert_type} Alert</p>
-                        <p className="text-sm text-muted-foreground">
-                          Status: <span className="capitalize">{alert.status}</span>
-                        </p>
-                        {alert.address && (
-                          <p className="mt-1 text-xs text-muted-foreground">{alert.address}</p>
-                        )}
-                      </div>
-                    </Popup>
-                  </Marker>
-                </div>
+                <AlertMarker key={alert.id} alert={alert} />
               ))}
             </MapContainer>
           </div>

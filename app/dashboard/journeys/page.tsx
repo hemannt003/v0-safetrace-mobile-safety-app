@@ -8,7 +8,7 @@ export default function JourneysPage() {
         <p className="text-muted-foreground">Monitor ongoing trips and check-ins</p>
       </div>
 
-      <JourneysList />
+      <JourneysList showConnectionStatus />
     </div>
   )
 }

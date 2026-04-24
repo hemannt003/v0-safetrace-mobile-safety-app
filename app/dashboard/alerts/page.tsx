@@ -8,7 +8,7 @@ export default function AlertsPage() {
         <p className="text-muted-foreground">Manage and respond to safety alerts</p>
       </div>
 
-      <AlertsList />
+      <AlertsList showConnectionStatus />
     </div>
   )
 }

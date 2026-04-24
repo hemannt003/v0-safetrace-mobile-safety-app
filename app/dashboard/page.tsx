@@ -13,8 +13,8 @@ export default function DashboardPage() {
       <StatsCards />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <AlertsList limit={5} />
-        <LiveMap height="400px" />
+        <AlertsList limit={5} showConnectionStatus />
+        <LiveMap height="400px" showConnectionStatus />
       </div>
     </div>
   )

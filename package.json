@@ -50,6 +50,7 @@
     "expo-location": "^55.1.8",
     "expo-router": "^55.0.13",
     "expo-status-bar": "^55.0.5",
+    "framer-motion": "^12.38.0",
     "input-otp": "1.4.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.564.0",

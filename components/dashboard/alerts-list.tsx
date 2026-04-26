@@ -14,7 +14,12 @@ import { useRealtime, type ConnectionStatus } from "@/hooks/use-realtime"
 import { ConnectionIndicator } from "./connection-indicator"
 import { cn } from "@/lib/utils"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || "Failed to fetch")
+  return json
+}
 
 interface AlertsListProps {
   limit?: number
@@ -227,7 +232,7 @@ export function AlertsList({
     })
   }, [alerts, mutate])
 
-  const displayAlerts = limit ? alerts?.slice(0, limit) : alerts
+  const displayAlerts = Array.isArray(alerts) ? (limit ? alerts.slice(0, limit) : alerts) : undefined
 
   if (isLoading) {
     return (

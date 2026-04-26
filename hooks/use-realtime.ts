@@ -33,6 +33,16 @@ export function useRealtime<T = Record<string, unknown>>({
   onDelete,
   enabled = true,
 }: UseRealtimeOptions<T>): UseRealtimeReturn {
+  const onInsertRef = useRef(onInsert)
+  const onUpdateRef = useRef(onUpdate)
+  const onDeleteRef = useRef(onDelete)
+
+  useEffect(() => {
+    onInsertRef.current = onInsert
+    onUpdateRef.current = onUpdate
+    onDeleteRef.current = onDelete
+  }, [onInsert, onUpdate, onDelete])
+
   const [status, setStatus] = useState<ConnectionStatus>("connecting")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
@@ -54,13 +64,13 @@ export function useRealtime<T = Record<string, unknown>>({
   }, [])
 
   const connect = useCallback(() => {
-    if (!enabled) return
+    if (!enabled || channelRef.current) return;
 
-    cleanup()
+
     setStatus("connecting")
 
     const supabase = createClient()
-    const channelName = `realtime-${table}-${Date.now()}`
+    const channelName = `realtime-${table}`
 
     const channelConfig: {
       event: "INSERT" | "UPDATE" | "DELETE" | "*"
@@ -86,12 +96,12 @@ export function useRealtime<T = Record<string, unknown>>({
           setLastUpdate(new Date())
           reconnectAttemptsRef.current = 0
 
-          if (payload.eventType === "INSERT" && onInsert) {
-            onInsert(payload.new as T)
-          } else if (payload.eventType === "UPDATE" && onUpdate) {
-            onUpdate(payload.new as T)
-          } else if (payload.eventType === "DELETE" && onDelete) {
-            onDelete({ old: payload.old as T })
+          if (payload.eventType === "INSERT" && onInsertRef.current) {
+            onInsertRef.current(payload.new as T)
+          } else if (payload.eventType === "UPDATE" && onUpdateRef.current) {
+            onUpdateRef.current(payload.new as T)
+          } else if (payload.eventType === "DELETE" && onDeleteRef.current) {
+            onDeleteRef.current({ old: payload.old as T })
           }
         }
       )
@@ -109,7 +119,7 @@ export function useRealtime<T = Record<string, unknown>>({
       })
 
     channelRef.current = channel
-  }, [enabled, table, schema, filter, event, onInsert, onUpdate, onDelete, cleanup])
+  }, [enabled, table, schema, filter, event])
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
@@ -173,13 +183,13 @@ export function useMultiRealtime({
   }, [])
 
   const connect = useCallback(() => {
-    if (!enabled) return
+    if (!enabled || channelRef.current) return;
 
-    cleanup()
+
     setStatus("connecting")
 
     const supabase = createClient()
-    const channelName = `multi-realtime-${Date.now()}`
+    const channelName = `multi-realtime`
 
     let channel = supabase.channel(channelName)
 
@@ -216,7 +226,7 @@ export function useMultiRealtime({
     })
 
     channelRef.current = channel
-  }, [enabled, tables, onUpdate, cleanup])
+  }, [enabled, tables, onUpdate])
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectAttemptsRef.current >= 5) {

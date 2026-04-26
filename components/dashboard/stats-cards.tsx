@@ -9,7 +9,12 @@ import { Spinner } from "@/components/ui/spinner"
 import { useMultiRealtime } from "@/hooks/use-realtime"
 import { cn } from "@/lib/utils"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || "Failed to fetch")
+  return json
+}
 
 // Memoized stat card for performance
 const StatCard = memo(function StatCard({

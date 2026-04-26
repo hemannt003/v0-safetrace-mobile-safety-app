@@ -13,7 +13,12 @@ import { useRealtime } from "@/hooks/use-realtime"
 import { ConnectionIndicator } from "./connection-indicator"
 import { cn } from "@/lib/utils"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (!res.ok) throw new Error(json.error || "Failed to fetch")
+  return json
+}
 
 // Memoized journey item
 const JourneyItem = memo(function JourneyItem({ journey }: { journey: Journey }) {
@@ -141,7 +146,7 @@ export function JourneysList({ showConnectionStatus = false }: JourneysListProps
         </div>
       </CardHeader>
       <CardContent>
-        {!journeys || journeys.length === 0 ? (
+        {!journeys || !Array.isArray(journeys) || journeys.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <CheckCircle className="mb-2 h-12 w-12 text-muted-foreground/50" />
             <p className="text-muted-foreground">No active journeys</p>

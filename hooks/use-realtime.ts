@@ -33,6 +33,16 @@ export function useRealtime<T = Record<string, unknown>>({
   onDelete,
   enabled = true,
 }: UseRealtimeOptions<T>): UseRealtimeReturn {
+  const onInsertRef = useRef(onInsert)
+  const onUpdateRef = useRef(onUpdate)
+  const onDeleteRef = useRef(onDelete)
+
+  useEffect(() => {
+    onInsertRef.current = onInsert
+    onUpdateRef.current = onUpdate
+    onDeleteRef.current = onDelete
+  }, [onInsert, onUpdate, onDelete])
+
   const [status, setStatus] = useState<ConnectionStatus>("connecting")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   
@@ -49,7 +59,8 @@ export function useRealtime<T = Record<string, unknown>>({
   }, [onInsert, onUpdate, onDelete])
 
   const connect = useCallback(() => {
-    if (!enabled) return
+    if (!enabled || channelRef.current) return;
+
 
     const supabase = createClient()
     // Consistent channel name based on configuration
@@ -199,7 +210,8 @@ export function useMultiRealtime({
   const tablesKey = JSON.stringify(tables)
 
   const connect = useCallback(() => {
-    if (!enabled) return
+    if (!enabled || channelRef.current) return;
+
 
     const supabase = createClient()
     

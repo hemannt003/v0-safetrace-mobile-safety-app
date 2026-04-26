@@ -1,0 +1,20 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "functions": {
+    "app/api/sos/fire/route.ts":          { "maxDuration": 30 },
+    "app/api/ai/analyze-audio/route.ts":  { "maxDuration": 30 },
+    "app/api/ai/risk-assessment/route.ts":{ "maxDuration": 15 },
+    "app/api/sos/location/route.ts":      { "maxDuration": 10 },
+    "app/api/sos/track/*/route.ts":       { "maxDuration": 10 }
+  },
+  "headers": [
+    {
+      "source": "/track/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    }
+  ]
+}

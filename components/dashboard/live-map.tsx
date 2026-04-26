@@ -11,7 +11,14 @@ import { Spinner } from "@/components/ui/spinner"
 import { useRealtime } from "@/hooks/use-realtime"
 import { ConnectionIndicator } from "./connection-indicator"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 // Dynamically import map to avoid SSR issues
 const MapContainer = dynamic(
@@ -115,7 +122,7 @@ export function LiveMap({
 
   // Memoize center calculation
   const center = useMemo<[number, number]>(() => {
-    if (alerts && alerts.length > 0) {
+    if (Array.isArray(alerts) && alerts.length > 0) {
       return [alerts[0].latitude, alerts[0].longitude]
     }
     return defaultCenter
@@ -123,7 +130,7 @@ export function LiveMap({
 
   // Memoize active alerts count
   const activeAlertsCount = useMemo(
-    () => alerts?.filter((a) => a.status === "active").length || 0,
+    () => Array.isArray(alerts) ? alerts.filter((a) => a.status === "active").length : 0,
     [alerts]
   )
 

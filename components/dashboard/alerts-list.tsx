@@ -14,7 +14,14 @@ import { useRealtime, type ConnectionStatus } from "@/hooks/use-realtime"
 import { ConnectionIndicator } from "./connection-indicator"
 import { cn } from "@/lib/utils"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 interface AlertsListProps {
   limit?: number
@@ -143,7 +150,7 @@ export function AlertsList({
   const [pendingAlertId, setPendingAlertId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
-  const { data: alerts, isLoading, mutate } = useSWR<Alert[]>(
+  const { data: alerts, error, isLoading, mutate } = useSWR<Alert[]>(
     "/api/alerts?status=active",
     fetcher,
     {
@@ -252,7 +259,7 @@ export function AlertsList({
           <CardTitle className="flex items-center gap-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             Active Alerts
-            {displayAlerts && displayAlerts.length > 0 && (
+            {Array.isArray(displayAlerts) && displayAlerts.length > 0 && (
               <Badge variant="destructive" className="ml-2">
                 {displayAlerts.length}
               </Badge>
@@ -268,7 +275,13 @@ export function AlertsList({
         </div>
       </CardHeader>
       <CardContent>
-        {!displayAlerts || displayAlerts.length === 0 ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center text-destructive">
+            <AlertTriangle className="mb-2 h-8 w-8" />
+            <p className="font-semibold">Failed to load alerts</p>
+            <p className="text-xs">{error.message}</p>
+          </div>
+        ) : !Array.isArray(displayAlerts) || displayAlerts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <CheckCircle className="mb-2 h-12 w-12 text-emerald-500" />
             <p className="text-muted-foreground">No active alerts</p>

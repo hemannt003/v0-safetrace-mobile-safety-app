@@ -6,14 +6,21 @@ import { formatDistanceToNow, format } from "date-fns"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Navigation, Clock, MapPin, CheckCircle } from "lucide-react"
+import { Navigation, Clock, MapPin, CheckCircle, AlertTriangle } from "lucide-react"
 import type { Journey } from "@/lib/types"
 import { Spinner } from "@/components/ui/spinner"
 import { useRealtime } from "@/hooks/use-realtime"
 import { ConnectionIndicator } from "./connection-indicator"
 import { cn } from "@/lib/utils"
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+const fetcher = async (url: string) => {
+  const res = await fetch(url)
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 // Memoized journey item
 const JourneyItem = memo(function JourneyItem({ journey }: { journey: Journey }) {
@@ -84,7 +91,7 @@ interface JourneysListProps {
 }
 
 export function JourneysList({ showConnectionStatus = false }: JourneysListProps) {
-  const { data: journeys, isLoading, mutate } = useSWR<Journey[]>(
+  const { data: journeys, error, isLoading, mutate } = useSWR<Journey[]>(
     "/api/journeys?status=active",
     fetcher,
     {
@@ -125,7 +132,7 @@ export function JourneysList({ showConnectionStatus = false }: JourneysListProps
           <CardTitle className="flex items-center gap-2">
             <Navigation className="h-5 w-5 text-amber-500" />
             Active Journeys
-            {journeys && journeys.length > 0 && (
+            {Array.isArray(journeys) && journeys.length > 0 && (
               <Badge variant="outline" className="ml-2">
                 {journeys.length}
               </Badge>
@@ -141,7 +148,13 @@ export function JourneysList({ showConnectionStatus = false }: JourneysListProps
         </div>
       </CardHeader>
       <CardContent>
-        {!journeys || journeys.length === 0 ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center py-8 text-center text-destructive">
+            <AlertTriangle className="mb-2 h-8 w-8" />
+            <p className="font-semibold">Failed to load journeys</p>
+            <p className="text-xs">{error.message}</p>
+          </div>
+        ) : !Array.isArray(journeys) || journeys.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <CheckCircle className="mb-2 h-12 w-12 text-muted-foreground/50" />
             <p className="text-muted-foreground">No active journeys</p>

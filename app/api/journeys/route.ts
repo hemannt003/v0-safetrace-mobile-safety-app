@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     .from("journeys")
     .select(`
       *,
-      user:users(id, full_name, phone, profile_image_url)
+      user:users!user_id(id, full_name, phone, profile_image_url)
     `)
     .order("created_at", { ascending: false })
 

@@ -35,49 +35,53 @@ export function useRealtime<T = Record<string, unknown>>({
 }: UseRealtimeOptions<T>): UseRealtimeReturn {
   const [status, setStatus] = useState<ConnectionStatus>("connecting")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  
   const channelRef = useRef<RealtimeChannel | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttemptsRef = useRef(0)
   const maxReconnectAttempts = 5
   const baseReconnectDelay = 1000
 
-  const cleanup = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-      reconnectTimeoutRef.current = null
-    }
-    if (channelRef.current) {
-      const supabase = createClient()
-      supabase.removeChannel(channelRef.current)
-      channelRef.current = null
-    }
-  }, [])
+  // Use refs for callbacks to ensure we always have the latest closures without re-subscribing
+  const callbacksRef = useRef({ onInsert, onUpdate, onDelete })
+  useEffect(() => {
+    callbacksRef.current = { onInsert, onUpdate, onDelete }
+  }, [onInsert, onUpdate, onDelete])
 
   const connect = useCallback(() => {
     if (!enabled) return
 
-    cleanup()
-    setStatus("connecting")
-
     const supabase = createClient()
-    const channelName = `realtime-${table}-${Date.now()}`
+    // Consistent channel name based on configuration
+    const channelName = `realtime-${schema}-${table}${filter ? `-${filter}` : ''}`
+    
+    // Prevent multiple subscriptions on re-render by reusing existing channel
+    let channel = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`)
+
+    if (channel) {
+      console.log(`[useRealtime] Reusing existing channel: ${channelName}`)
+      channelRef.current = channel
+      if (channel.state === 'joined') {
+        setStatus("connected")
+      }
+      return
+    }
+
+    setStatus("connecting")
 
     const channelConfig: {
       event: "INSERT" | "UPDATE" | "DELETE" | "*"
       schema: string
       table: string
       filter?: string
-    } = {
-      event,
-      schema,
-      table,
-    }
+    } = { event, schema, table }
 
     if (filter) {
       channelConfig.filter = filter
     }
 
-    const channel = supabase
+    // Correct pattern: .channel().on().subscribe()
+    channel = supabase
       .channel(channelName)
       .on(
         "postgres_changes",
@@ -86,30 +90,35 @@ export function useRealtime<T = Record<string, unknown>>({
           setLastUpdate(new Date())
           reconnectAttemptsRef.current = 0
 
-          if (payload.eventType === "INSERT" && onInsert) {
-            onInsert(payload.new as T)
-          } else if (payload.eventType === "UPDATE" && onUpdate) {
-            onUpdate(payload.new as T)
-          } else if (payload.eventType === "DELETE" && onDelete) {
-            onDelete({ old: payload.old as T })
+          const { onInsert: cbInsert, onUpdate: cbUpdate, onDelete: cbDelete } = callbacksRef.current
+
+          if (payload.eventType === "INSERT" && cbInsert) {
+            cbInsert(payload.new as T)
+          } else if (payload.eventType === "UPDATE" && cbUpdate) {
+            cbUpdate(payload.new as T)
+          } else if (payload.eventType === "DELETE" && cbDelete) {
+            cbDelete({ old: payload.old as T })
           }
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          setStatus("connected")
-          reconnectAttemptsRef.current = 0
-        } else if (status === "CLOSED" || status === "CHANNEL_ERROR") {
-          setStatus("disconnected")
-          scheduleReconnect()
-        } else if (status === "TIMED_OUT") {
-          setStatus("reconnecting")
-          scheduleReconnect()
-        }
-      })
+      
+    // .subscribe() MUST always be the LAST method in the chain
+    channel.subscribe((subscribeStatus) => {
+      if (subscribeStatus === "SUBSCRIBED") {
+        setStatus("connected")
+        reconnectAttemptsRef.current = 0
+      } else if (subscribeStatus === "CLOSED" || subscribeStatus === "CHANNEL_ERROR") {
+        setStatus("disconnected")
+        scheduleReconnect()
+      } else if (subscribeStatus === "TIMED_OUT") {
+        setStatus("reconnecting")
+        scheduleReconnect()
+      }
+    })
 
     channelRef.current = channel
-  }, [enabled, table, schema, filter, event, onInsert, onUpdate, onDelete, cleanup])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, table, schema, filter, event])
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
@@ -121,6 +130,7 @@ export function useRealtime<T = Record<string, unknown>>({
     reconnectAttemptsRef.current += 1
     setStatus("reconnecting")
 
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
     reconnectTimeoutRef.current = setTimeout(() => {
       connect()
     }, delay)
@@ -128,13 +138,31 @@ export function useRealtime<T = Record<string, unknown>>({
 
   const reconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
+    if (channelRef.current) {
+      const supabase = createClient()
+      supabase.removeChannel(channelRef.current)
+      channelRef.current = null
+    }
     connect()
   }, [connect])
 
+  // Single useEffect for realtime logic
   useEffect(() => {
     connect()
-    return cleanup
-  }, [connect, cleanup])
+    
+    // Proper cleanup in the return function
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      if (channelRef.current) {
+        const supabase = createClient()
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+    }
+  }, [connect])
 
   return { status, lastUpdate, reconnect }
 }
@@ -157,66 +185,74 @@ export function useMultiRealtime({
 }: UseMultiRealtimeOptions): UseRealtimeReturn {
   const [status, setStatus] = useState<ConnectionStatus>("connecting")
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  
   const channelRef = useRef<RealtimeChannel | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const reconnectAttemptsRef = useRef(0)
 
-  const cleanup = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current)
-    }
-    if (channelRef.current) {
-      const supabase = createClient()
-      supabase.removeChannel(channelRef.current)
-      channelRef.current = null
-    }
-  }, [])
+  const onUpdateRef = useRef(onUpdate)
+  useEffect(() => {
+    onUpdateRef.current = onUpdate
+  }, [onUpdate])
+
+  // Create a stable string representation to avoid unnecessary re-connects
+  const tablesKey = JSON.stringify(tables)
 
   const connect = useCallback(() => {
     if (!enabled) return
 
-    cleanup()
+    const supabase = createClient()
+    
+    // Create a deterministic hash for the channel name based on the tables config
+    let hash = 0
+    for (let i = 0; i < tablesKey.length; i++) {
+      hash = Math.imul(31, hash) + tablesKey.charCodeAt(i) | 0
+    }
+    const channelName = `multi-realtime-${Math.abs(hash)}`
+    
+    // Reuse existing channel
+    let channel = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`)
+
+    if (channel) {
+      console.log(`[useMultiRealtime] Reusing existing channel: ${channelName}`)
+      channelRef.current = channel
+      if (channel.state === 'joined') {
+        setStatus("connected")
+      }
+      return
+    }
+
     setStatus("connecting")
 
-    const supabase = createClient()
-    const channelName = `multi-realtime-${Date.now()}`
+    const parsedTables = JSON.parse(tablesKey) as UseMultiRealtimeOptions['tables']
+    let newChannel = supabase.channel(channelName)
 
-    let channel = supabase.channel(channelName)
+    // Ensure all .on() listeners are attached BEFORE calling .subscribe()
+    parsedTables.forEach(({ table, event = "*", filter }) => {
+      const config: any = { event, schema: "public", table }
+      if (filter) config.filter = filter
 
-    tables.forEach(({ table, event = "*", filter }) => {
-      const config: {
-        event: "INSERT" | "UPDATE" | "DELETE" | "*"
-        schema: string
-        table: string
-        filter?: string
-      } = {
-        event,
-        schema: "public",
-        table,
-      }
-      if (filter) {
-        config.filter = filter
-      }
-
-      channel = channel.on("postgres_changes", config, () => {
+      newChannel = newChannel.on("postgres_changes", config, () => {
         setLastUpdate(new Date())
         reconnectAttemptsRef.current = 0
-        onUpdate()
+        onUpdateRef.current()
       })
     })
 
-    channel.subscribe((subscriptionStatus) => {
-      if (subscriptionStatus === "SUBSCRIBED") {
+    // .subscribe() must ALWAYS be the LAST method in the chain
+    newChannel.subscribe((subscribeStatus) => {
+      if (subscribeStatus === "SUBSCRIBED") {
         setStatus("connected")
         reconnectAttemptsRef.current = 0
-      } else if (subscriptionStatus === "CLOSED" || subscriptionStatus === "CHANNEL_ERROR") {
+      } else if (subscribeStatus === "CLOSED" || subscribeStatus === "CHANNEL_ERROR") {
         setStatus("disconnected")
         scheduleReconnect()
       }
     })
 
-    channelRef.current = channel
-  }, [enabled, tables, onUpdate, cleanup])
+    channelRef.current = newChannel
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, tablesKey])
 
   const scheduleReconnect = useCallback(() => {
     if (reconnectAttemptsRef.current >= 5) {
@@ -228,18 +264,37 @@ export function useMultiRealtime({
     reconnectAttemptsRef.current += 1
     setStatus("reconnecting")
 
+    if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
     reconnectTimeoutRef.current = setTimeout(connect, delay)
   }, [connect])
 
   const reconnect = useCallback(() => {
     reconnectAttemptsRef.current = 0
+    if (channelRef.current) {
+      const supabase = createClient()
+      supabase.removeChannel(channelRef.current)
+      channelRef.current = null
+    }
     connect()
   }, [connect])
 
+  // Single useEffect for multi realtime logic
   useEffect(() => {
     connect()
-    return cleanup
-  }, [connect, cleanup])
+    
+    // Proper cleanup
+    return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      if (channelRef.current) {
+        const supabase = createClient()
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+    }
+  }, [connect])
 
   return { status, lastUpdate, reconnect }
 }

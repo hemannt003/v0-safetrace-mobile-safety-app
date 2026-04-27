@@ -1,0 +1,58 @@
+{
+  "expo": {
+    "name": "SafeTrace",
+    "slug": "safetrace",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "safetrace",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#DC2626"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.safetrace.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "SafeTrace needs your location to share it with emergency contacts during alerts.",
+        "NSLocationAlwaysUsageDescription": "SafeTrace needs background location access for journey monitoring and safe zone alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeTrace needs location access to keep you safe.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#DC2626"
+      },
+      "package": "com.safetrace.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SafeTrace needs your location for emergency alerts and journey monitoring."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#DC2626"
+        }
+      ],
+      "expo-sensors"
+    ]
+  }
+}
